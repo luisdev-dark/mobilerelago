@@ -1,18 +1,18 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { routesApi } from '@/src/api/routes.api';
-import type { RouteDetail } from '@/src/models/route';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { fetchRouteDetail } from '@/src/api/routes.api';
+import type { RouteDetail, RouteStop } from '@/src/models/route';
 
 export default function RouteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const [route, setRoute] = useState<RouteDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!id) return;
     loadRoute();
   }, [id]);
 
@@ -20,186 +20,104 @@ export default function RouteDetailScreen() {
     try {
       setLoading(true);
       setError(null);
-      const data = await routesApi.getRouteById(id);
+      const data = await fetchRouteDetail(id!);
+      // Sort stops
+      data.stops.sort((a, b) => a.stopOrder - b.stopOrder);
       setRoute(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading route');
+      setError(err instanceof Error ? err.message : 'Error al cargar detalle');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleBookTrip = () => {
-    router.push({
-      pathname: '/trips/confirm',
-      params: { routeId: id },
-    });
-  };
-
   if (loading) {
-    return (
-      <ThemedView style={styles.centerContainer}>
-        <ActivityIndicator size="large" />
-        <ThemedText style={styles.loadingText}>Loading route details...</ThemedText>
-      </ThemedView>
-    );
+    return <View style={styles.center}><ActivityIndicator size="large" /></View>;
   }
 
-  if (error) {
+  if (error || !route) {
     return (
-      <ThemedView style={styles.centerContainer}>
-        <ThemedText style={styles.errorText}>{error}</ThemedText>
-        <TouchableOpacity style={styles.retryButton} onPress={loadRoute}>
-          <Text style={styles.retryButtonText}>Retry</Text>
+      <View style={styles.center}>
+        <Text style={styles.errorText}>{error || 'Ruta no encontrada'}</Text>
+        <TouchableOpacity onPress={loadRoute} style={styles.button}>
+          <Text style={styles.buttonText}>Reintentar</Text>
         </TouchableOpacity>
-      </ThemedView>
-    );
-  }
-
-  if (!route) {
-    return (
-      <ThemedView style={styles.centerContainer}>
-        <ThemedText>Route not found</ThemedText>
-      </ThemedView>
+      </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <ThemedView style={styles.content}>
-        <View style={styles.header}>
-          <ThemedText type="title">{route.name}</ThemedText>
-          <ThemedText type="subtitle" style={styles.subtitle}>
-            {route.origin} → {route.destination}
-          </ThemedText>
-        </View>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>{route.name}</Text>
+        <Text style={styles.subtitle}>{route.origin} → {route.destination}</Text>
+        <Text style={styles.price}>Base: {route.currency} {route.basePrice.toFixed(2)}</Text>
+      </View>
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Price
-          </ThemedText>
-          <ThemedText style={styles.price}>
-            {route.base_price.toFixed(2)} {route.currency}
-          </ThemedText>
-        </View>
+      <Text style={styles.sectionTitle}>Paradas:</Text>
+      <FlatList
+        data={route.stops}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={styles.stopItem}>
+            <Text style={styles.stopOrder}>{item.stopOrder}</Text>
+            <Text style={styles.stopName}>{item.name}</Text>
+          </View>
+        )}
+        style={styles.list}
+      />
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Stops ({route.stops.length})
-          </ThemedText>
-          {route.stops.length > 0 ? (
-            route.stops.map((stop, index) => (
-              <View key={stop.id} style={styles.stopItem}>
-                <View style={styles.stopNumber}>
-                  <Text style={styles.stopNumberText}>{index + 1}</Text>
-                </View>
-                <ThemedText style={styles.stopName}>{stop.name}</ThemedText>
-              </View>
-            ))
-          ) : (
-            <ThemedText style={styles.noStops}>No intermediate stops</ThemedText>
-          )}
-        </View>
-
-        <TouchableOpacity style={styles.bookButton} onPress={handleBookTrip}>
-          <Text style={styles.bookButtonText}>Book Trip</Text>
-        </TouchableOpacity>
-      </ThemedView>
-    </ScrollView>
+      <TouchableOpacity
+        style={styles.reserveButton}
+        onPress={() => router.push({
+            pathname: '/trips/confirm',
+            params: { routeId: route.id }
+        })}
+      >
+        <Text style={styles.reserveButtonText}>Reservar</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  content: {
-    padding: 16,
-  },
-  header: {
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  price: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#ddd' },
+  title: { fontSize: 22, fontWeight: 'bold' },
+  subtitle: { fontSize: 16, color: '#666', marginTop: 4 },
+  price: { fontSize: 18, color: '#007AFF', marginTop: 8, fontWeight: '600' },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', margin: 16 },
+  list: { flex: 1, paddingHorizontal: 16 },
   stopItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    backgroundColor: 'white',
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 6,
   },
-  stopNumber: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
+  stopOrder: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#eee',
+    textAlign: 'center',
+    textAlignVertical: 'center', // Android only
+    lineHeight: 30, // iOS
     marginRight: 12,
-  },
-  stopNumberText: {
-    color: 'white',
     fontWeight: 'bold',
-    fontSize: 14,
   },
-  stopName: {
-    fontSize: 16,
-    flex: 1,
-  },
-  noStops: {
-    color: '#8E8E93',
-    fontStyle: 'italic',
-  },
-  bookButton: {
+  stopName: { fontSize: 16 },
+  reserveButton: {
     backgroundColor: '#007AFF',
     padding: 16,
+    margin: 16,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 8,
   },
-  bookButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-  },
-  errorText: {
-    color: '#FF3B30',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
+  reserveButtonText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  errorText: { color: 'red', marginBottom: 16 },
+  button: { backgroundColor: '#007AFF', padding: 12, borderRadius: 8 },
+  buttonText: { color: 'white', fontWeight: 'bold' },
 });

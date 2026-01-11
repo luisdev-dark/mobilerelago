@@ -1,276 +1,159 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { tripsApi } from '@/src/api/trips.api';
-import type { TripDetail } from '@/src/models/trip';
-
-const STATUS_COLORS: Record<string, string> = {
-  requested: '#FF9500',
-  confirmed: '#007AFF',
-  completed: '#34C759',
-  cancelled: '#FF3B30',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  requested: 'Requested',
-  confirmed: 'Confirmed',
-  completed: 'Completed',
-  cancelled: 'Cancelled',
-};
+import React, { useEffect, useState } from 'react';
+import { View, Text, ActivityIndicator, TouchableOpacity, StyleSheet } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { fetchTrip } from '@/src/api/trips.api';
+import type { Trip } from '@/src/models/trip';
 
 export default function TripDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [trip, setTrip] = useState<TripDetail | null>(null);
+  const router = useRouter();
+  const [trip, setTrip] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadTrip();
-  }, [id]);
 
   const loadTrip = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await tripsApi.getTripById(id);
+      const data = await fetchTrip(id!);
       setTrip(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading trip');
+      setError(err instanceof Error ? err.message : 'Error al cargar viaje');
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    if (id) loadTrip();
+  }, [id]);
+
   if (loading) {
-    return (
-      <ThemedView style={styles.centerContainer}>
-        <ActivityIndicator size="large" />
-        <ThemedText style={styles.loadingText}>Loading trip details...</ThemedText>
-      </ThemedView>
-    );
+    return <View style={styles.center}><ActivityIndicator size="large" /></View>;
   }
 
-  if (error) {
+  if (error || !trip) {
     return (
-      <ThemedView style={styles.centerContainer}>
-        <ThemedText style={styles.errorText}>{error}</ThemedText>
-        <TouchableOpacity style={styles.retryButton} onPress={loadTrip}>
-          <Text style={styles.retryButtonText}>Retry</Text>
+      <View style={styles.center}>
+        <Text style={styles.errorText}>{error || 'Viaje no encontrado'}</Text>
+        <TouchableOpacity onPress={loadTrip} style={styles.button}>
+          <Text style={styles.buttonText}>Reintentar</Text>
         </TouchableOpacity>
-      </ThemedView>
+      </View>
     );
   }
 
-  if (!trip) {
-    return (
-      <ThemedView style={styles.centerContainer}>
-        <ThemedText>Trip not found</ThemedText>
-      </ThemedView>
-    );
-  }
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'confirmed': return '#34C759';
+      case 'completed': return '#007AFF';
+      case 'cancelled': return '#FF3B30';
+      default: return '#FF9500'; // requested
+    }
+  };
 
-  const statusColor = STATUS_COLORS[trip.status] || '#8E8E93';
-  const statusLabel = STATUS_LABELS[trip.status] || trip.status;
+  const getPaymentLabel = (method: string) => {
+      switch(method) {
+          case 'cash': return 'Efectivo';
+          case 'yape': return 'Yape';
+          case 'pling': return 'Plin';
+          default: return method;
+      }
+  };
 
   return (
-    <ScrollView style={styles.container}>
-      <ThemedView style={styles.content}>
-        <View style={styles.header}>
-          <ThemedText type="title">Trip Details</ThemedText>
-          <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-            <Text style={styles.statusText}>{statusLabel}</Text>
-          </View>
+    <View style={styles.container}>
+      <View style={styles.card}>
+        <Text style={styles.title}>Viaje #{trip.id.slice(0, 8)}</Text>
+
+        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(trip.status) }]}>
+          <Text style={styles.statusText}>{trip.status.toUpperCase()}</Text>
         </View>
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Route
-          </ThemedText>
-          <ThemedText style={styles.routeName}>{trip.route.name}</ThemedText>
-          <ThemedText style={styles.routeInfo}>
-            {trip.route.origin} → {trip.route.destination}
-          </ThemedText>
+        <View style={styles.row}>
+          <Text style={styles.label}>Método de Pago:</Text>
+          <Text style={styles.value}>{getPaymentLabel(trip.paymentMethod)}</Text>
         </View>
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Pickup
-          </ThemedText>
-          {trip.pickup ? (
-            <ThemedText style={styles.stopText}>{trip.pickup.name}</ThemedText>
-          ) : (
-            <ThemedText style={styles.stopText}>{trip.route.origin}</ThemedText>
-          )}
+        <View style={styles.row}>
+          <Text style={styles.label}>Precio:</Text>
+          <Text style={styles.value}>{trip.currency} {(trip.priceCents / 100).toFixed(2)}</Text>
         </View>
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Dropoff
-          </ThemedText>
-          {trip.dropoff ? (
-            <ThemedText style={styles.stopText}>{trip.dropoff.name}</ThemedText>
-          ) : (
-            <ThemedText style={styles.stopText}>{trip.route.destination}</ThemedText>
-          )}
+        <View style={styles.row}>
+            <Text style={styles.label}>Programado:</Text>
+            <Text style={styles.value}>
+                {trip.scheduledAt ? new Date(trip.scheduledAt).toLocaleString() : 'Inmediato'}
+            </Text>
         </View>
+      </View>
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Payment
-          </ThemedText>
-          <View style={styles.paymentInfo}>
-            <ThemedText style={styles.paymentMethod}>
-              {trip.payment_method.charAt(0).toUpperCase() + trip.payment_method.slice(1)}
-            </ThemedText>
-            <ThemedText style={styles.price}>
-              {trip.price.toFixed(2)} {trip.currency}
-            </ThemedText>
-          </View>
-        </View>
+      <TouchableOpacity onPress={loadTrip} style={styles.refreshButton}>
+        <Text style={styles.refreshButtonText}>Actualizar Estado</Text>
+      </TouchableOpacity>
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Schedule
-          </ThemedText>
-          {trip.scheduled_at ? (
-            <ThemedText style={styles.scheduleText}>
-              {new Date(trip.scheduled_at).toLocaleString()}
-            </ThemedText>
-          ) : (
-            <ThemedText style={styles.scheduleText}>Immediate departure</ThemedText>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Trip ID
-          </ThemedText>
-          <ThemedText style={styles.tripId}>{trip.id}</ThemedText>
-        </View>
-
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Booked At
-          </ThemedText>
-          <ThemedText style={styles.bookedAt}>
-            {new Date(trip.created_at).toLocaleString()}
-          </ThemedText>
-        </View>
-
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
-      </ThemedView>
-    </ScrollView>
+      <TouchableOpacity onPress={() => router.push('/routes')} style={styles.homeButton}>
+        <Text style={styles.homeButtonText}>Volver al Inicio</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  container: { flex: 1, padding: 20, backgroundColor: '#f5f5f5', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  card: {
+    backgroundColor: 'white',
+    padding: 24,
+    borderRadius: 12,
+    width: '100%',
     alignItems: 'center',
-    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 30,
   },
-  content: {
-    padding: 16,
-  },
-  header: {
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    alignItems: 'flex-start',
-  },
+  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
   statusBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    marginTop: 12,
-  },
-  statusText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  section: {
     marginBottom: 20,
   },
-  sectionTitle: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginBottom: 8,
-  },
-  routeName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  routeInfo: {
-    fontSize: 16,
-  },
-  stopText: {
-    fontSize: 16,
-  },
-  paymentInfo: {
+  statusText: { color: 'white', fontWeight: 'bold' },
+  row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    width: '100%',
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    paddingBottom: 8,
   },
-  paymentMethod: {
-    fontSize: 16,
-    textTransform: 'capitalize',
-  },
-  price: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  scheduleText: {
-    fontSize: 16,
-  },
-  tripId: {
-    fontSize: 14,
-    color: '#8E8E93',
-    fontFamily: 'monospace',
-  },
-  bookedAt: {
-    fontSize: 14,
-    color: '#8E8E93',
-  },
-  backButton: {
-    backgroundColor: '#f5f5f5',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  backButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-  },
-  errorText: {
-    color: '#FF3B30',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  retryButton: {
+  label: { color: '#666', fontSize: 16 },
+  value: { fontWeight: '600', fontSize: 16 },
+
+  refreshButton: {
     backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     borderRadius: 8,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  retryButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
+  refreshButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
+
+  homeButton: {
+    paddingVertical: 12,
+    width: '100%',
+    alignItems: 'center',
   },
+  homeButtonText: { color: '#007AFF', fontSize: 16 },
+
+  errorText: { color: 'red', marginBottom: 16 },
+  button: { backgroundColor: '#007AFF', padding: 12, borderRadius: 8 },
+  buttonText: { color: 'white', fontWeight: 'bold' },
 });

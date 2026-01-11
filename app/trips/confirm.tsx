@@ -1,308 +1,193 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { routesApi } from '@/src/api/routes.api';
-import { tripsApi } from '@/src/api/trips.api';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ActivityIndicator, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { fetchRouteDetail } from '@/src/api/routes.api';
+import { createTrip } from '@/src/api/trips.api';
 import type { RouteDetail } from '@/src/models/route';
 
-const PAYMENT_METHODS = [
-  { id: 'cash', label: 'Cash' },
-  { id: 'yape', label: 'Yape' },
-  { id: 'pling', label: 'Plin' },
-] as const;
-
-type PaymentMethod = typeof PAYMENT_METHODS[number]['id'];
+// Simple homemade dropdown since we want simple UI
+const Dropdown = ({ label, items, selectedValue, onValueChange }: any) => {
+  return (
+    <View style={styles.inputGroup}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.optionsContainer}>
+        {items.map((item: any) => (
+          <TouchableOpacity
+            key={item.value}
+            style={[
+              styles.option,
+              selectedValue === item.value && styles.optionSelected
+            ]}
+            onPress={() => onValueChange(item.value)}
+          >
+            <Text style={[
+              styles.optionText,
+              selectedValue === item.value && styles.optionTextSelected
+            ]}>
+              {item.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+};
 
 export default function TripConfirmScreen() {
   const { routeId } = useLocalSearchParams<{ routeId: string }>();
+  const router = useRouter();
+
   const [route, setRoute] = useState<RouteDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   
-  const [selectedPickup, setSelectedPickup] = useState<string | null>(null);
-  const [selectedDropoff, setSelectedDropoff] = useState<string | null>(null);
-  const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>('cash');
+  const [pickupId, setPickupId] = useState<string>('');
+  const [dropoffId, setDropoffId] = useState<string>('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'yape' | 'pling'>('cash');
 
   useEffect(() => {
-    loadRoute();
+    if (routeId) {
+      loadRoute();
+    }
   }, [routeId]);
 
   const loadRoute = async () => {
     try {
       setLoading(true);
-      setError(null);
-      const data = await routesApi.getRouteById(routeId);
+      const data = await fetchRouteDetail(routeId!);
+      data.stops.sort((a, b) => a.stopOrder - b.stopOrder);
       setRoute(data);
+      if (data.stops.length > 0) {
+        setPickupId(data.stops[0].id);
+        setDropoffId(data.stops[data.stops.length - 1].id);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading route');
+      Alert.alert('Error', 'No se pudo cargar la información de la ruta');
+      router.back();
     } finally {
       setLoading(false);
     }
   };
 
-  const handleBookTrip = async () => {
-    if (!route) return;
+  const handleConfirm = async () => {
+    if (!pickupId || !dropoffId) {
+      Alert.alert('Error', 'Selecciona origen y destino');
+      return;
+    }
+
+    // Validate order? (Optional but good)
+    const pickupIndex = route?.stops.findIndex(s => s.id === pickupId) ?? -1;
+    const dropoffIndex = route?.stops.findIndex(s => s.id === dropoffId) ?? -1;
+
+    if (pickupIndex >= dropoffIndex && pickupIndex !== -1 && dropoffIndex !== -1) {
+       Alert.alert('Error', 'La parada de destino debe ser posterior a la de origen');
+       return;
+    }
 
     try {
       setSubmitting(true);
-      setError(null);
-
-      const tripData = {
-        route_id: route.id,
-        pickup_stop_id: selectedPickup || null,
-        dropoff_stop_id: selectedDropoff || null,
-        payment_method: selectedPayment,
-      };
-
-      const trip = await tripsApi.createTrip(tripData);
+      const trip = await createTrip({
+        routeId: routeId!,
+        pickupStopId: pickupId,
+        dropoffStopId: dropoffId,
+        paymentMethod: paymentMethod,
+        // scheduledAt: new Date().toISOString() // Optional, depends on backend
+      });
       
-      Alert.alert(
-        'Trip Booked!',
-        'Your trip has been successfully booked.',
-        [
-          {
-            text: 'View Trip',
-            onPress: () => router.replace(`/trips/${trip.id}`),
-          },
-        ]
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error booking trip');
-      Alert.alert('Error', 'Failed to book trip. Please try again.');
+      router.replace(`/trips/${trip.id}`);
+    } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'No se pudo crear el viaje');
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading) {
-    return (
-      <ThemedView style={styles.centerContainer}>
-        <ActivityIndicator size="large" />
-        <ThemedText style={styles.loadingText}>Loading route...</ThemedText>
-      </ThemedView>
-    );
+  if (loading || !route) {
+    return <View style={styles.center}><ActivityIndicator size="large" /></View>;
   }
 
-  if (error && !route) {
-    return (
-      <ThemedView style={styles.centerContainer}>
-        <ThemedText style={styles.errorText}>{error}</ThemedText>
-        <TouchableOpacity style={styles.retryButton} onPress={loadRoute}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </ThemedView>
-    );
-  }
-
-  if (!route) {
-    return (
-      <ThemedView style={styles.centerContainer}>
-        <ThemedText>Route not found</ThemedText>
-      </ThemedView>
-    );
-  }
+  const stopOptions = route.stops.map(s => ({ label: s.name, value: s.id }));
+  const paymentOptions = [
+    { label: 'Efectivo', value: 'cash' },
+    { label: 'Yape', value: 'yape' },
+    { label: 'Plin', value: 'pling' },
+  ];
 
   return (
     <ScrollView style={styles.container}>
-      <ThemedView style={styles.content}>
-        <View style={styles.header}>
-          <ThemedText type="title">Book Trip</ThemedText>
-          <ThemedText style={styles.routeName}>{route.name}</ThemedText>
-          <ThemedText style={styles.routeInfo}>
-            {route.origin} → {route.destination}
-          </ThemedText>
-        </View>
+      <Text style={styles.title}>Confirmar Viaje</Text>
+      <Text style={styles.subtitle}>Ruta: {route.name}</Text>
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Pickup Stop (Optional)
-          </ThemedText>
-          <TouchableOpacity
-            style={[styles.optionButton, !selectedPickup && styles.selectedOption]}
-            onPress={() => setSelectedPickup(null)}
-          >
-            <Text style={styles.optionText}>Origin ({route.origin})</Text>
-            {!selectedPickup && <Text style={styles.checkmark}>✓</Text>}
-          </TouchableOpacity>
-          {route.stops.map((stop) => (
-            <TouchableOpacity
-              key={stop.id}
-              style={[styles.optionButton, selectedPickup === stop.id && styles.selectedOption]}
-              onPress={() => setSelectedPickup(stop.id)}
-            >
-              <Text style={styles.optionText}>{stop.name}</Text>
-              {selectedPickup === stop.id && <Text style={styles.checkmark}>✓</Text>}
-            </TouchableOpacity>
-          ))}
-        </View>
+      <Dropdown
+        label="Punto de Recogida"
+        items={stopOptions}
+        selectedValue={pickupId}
+        onValueChange={setPickupId}
+      />
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Dropoff Stop (Optional)
-          </ThemedText>
-          <TouchableOpacity
-            style={[styles.optionButton, !selectedDropoff && styles.selectedOption]}
-            onPress={() => setSelectedDropoff(null)}
-          >
-            <Text style={styles.optionText}>Destination ({route.destination})</Text>
-            {!selectedDropoff && <Text style={styles.checkmark}>✓</Text>}
-          </TouchableOpacity>
-          {route.stops.map((stop) => (
-            <TouchableOpacity
-              key={stop.id}
-              style={[styles.optionButton, selectedDropoff === stop.id && styles.selectedOption]}
-              onPress={() => setSelectedDropoff(stop.id)}
-            >
-              <Text style={styles.optionText}>{stop.name}</Text>
-              {selectedDropoff === stop.id && <Text style={styles.checkmark}>✓</Text>}
-            </TouchableOpacity>
-          ))}
-        </View>
+      <Dropdown
+        label="Punto de Bajada"
+        items={stopOptions}
+        selectedValue={dropoffId}
+        onValueChange={setDropoffId}
+      />
 
-        <View style={styles.section}>
-          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-            Payment Method
-          </ThemedText>
-          {PAYMENT_METHODS.map((method) => (
-            <TouchableOpacity
-              key={method.id}
-              style={[styles.optionButton, selectedPayment === method.id && styles.selectedOption]}
-              onPress={() => setSelectedPayment(method.id)}
-            >
-              <Text style={styles.optionText}>{method.label}</Text>
-              {selectedPayment === method.id && <Text style={styles.checkmark}>✓</Text>}
-            </TouchableOpacity>
-          ))}
-        </View>
+      <Dropdown
+        label="Método de Pago"
+        items={paymentOptions}
+        selectedValue={paymentMethod}
+        onValueChange={setPaymentMethod}
+      />
 
-        <View style={styles.priceSection}>
-          <ThemedText type="defaultSemiBold">Total Price:</ThemedText>
-          <ThemedText style={styles.price}>
-            {route.base_price.toFixed(2)} {route.currency}
-          </ThemedText>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.bookButton, submitting && styles.disabledButton]}
-          onPress={handleBookTrip}
-          disabled={submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text style={styles.bookButtonText}>Confirm Booking</Text>
-          )}
-        </TouchableOpacity>
-      </ThemedView>
+      <TouchableOpacity
+        style={[styles.confirmButton, submitting && styles.disabledButton]}
+        onPress={handleConfirm}
+        disabled={submitting}
+      >
+        {submitting ? (
+          <ActivityIndicator color="white" />
+        ) : (
+          <Text style={styles.confirmButtonText}>Confirmar Reserva</Text>
+        )}
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  content: {
-    padding: 16,
-  },
-  header: {
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  routeName: {
-    fontSize: 18,
-    marginTop: 8,
-  },
-  routeInfo: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginTop: 4,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  optionButton: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    marginBottom: 8,
-    borderRadius: 8,
+  container: { flex: 1, padding: 20, backgroundColor: '#f5f5f5' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 8 },
+  subtitle: { fontSize: 16, color: '#666', marginBottom: 24 },
+
+  inputGroup: { marginBottom: 20 },
+  label: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
+  optionsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  option: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'white',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: '#ddd',
+    marginBottom: 8,
+    marginRight: 8,
   },
-  selectedOption: {
+  optionSelected: {
+    backgroundColor: '#007AFF',
     borderColor: '#007AFF',
-    backgroundColor: '#007AFF10',
   },
-  optionText: {
-    fontSize: 16,
-  },
-  checkmark: {
-    color: '#007AFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  priceSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-    padding: 16,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-  },
-  price: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  bookButton: {
-    backgroundColor: '#007AFF',
+  optionText: { color: '#333' },
+  optionTextSelected: { color: 'white', fontWeight: 'bold' },
+
+  confirmButton: {
+    backgroundColor: '#34C759',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 40,
   },
-  disabledButton: {
-    backgroundColor: '#8E8E93',
-  },
-  bookButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-  },
-  errorText: {
-    color: '#FF3B30',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
+  disabledButton: { opacity: 0.7 },
+  confirmButtonText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
 });
