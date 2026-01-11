@@ -1,85 +1,56 @@
 import { BASE_URL } from '@/src/config/config';
 
-/**
- * Cliente HTTP simple usando fetch
- * - Timeout de 10 segundos
- * - Manejo de errores HTTP no 2xx
- * - Sin interceptores ni librerías externas
- */
-
-const TIMEOUT_MS = 10000; // 10 segundos
-
-/**
- * Realiza una petición GET y devuelve JSON parseado
- */
-export async function getJson<T>(path: string): Promise<T> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  try {
-    const response = await fetch(`${BASE_URL}${path}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Error HTTP ${response.status}: ${errorText || response.statusText}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    clearTimeout(timeoutId);
-    
-    if (error instanceof Error) {
-      if (error.name === 'AbortError') {
-        throw new Error('La petición tardó demasiado (timeout 10s)');
-      }
-      throw error;
-    }
-    throw new Error('Error inesperado en la petición');
+export class HttpError extends Error {
+  constructor(public status: number, public body: any) {
+    super(`HTTP Error ${status}`);
+    this.name = 'HttpError';
   }
 }
 
-/**
- * Realiza una petición POST con body JSON y devuelve JSON parseado
- */
-export async function postJson<T>(path: string, body: any): Promise<T> {
+async function request<T>(path: string, options: RequestInit): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const id = setTimeout(() => controller.abort(), 10000);
 
   try {
     const response = await fetch(`${BASE_URL}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+      ...options,
       signal: controller.signal,
     });
-
-    clearTimeout(timeoutId);
+    clearTimeout(id);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Error HTTP ${response.status}: ${errorText || response.statusText}`);
+      let body: any;
+      try {
+        body = await response.json();
+      } catch {
+        body = await response.text();
+      }
+      throw new HttpError(response.status, body);
+    }
+
+    // Handle 204 No Content
+    if (response.status === 204) {
+      return {} as T;
     }
 
     return await response.json();
   } catch (error) {
-    clearTimeout(timeoutId);
-    
-    if (error instanceof Error) {
-      if (error.name === 'AbortError') {
-        throw new Error('La petición tardó demasiado (timeout 10s)');
-      }
-      throw error;
-    }
-    throw new Error('Error inesperado en la petición');
+    clearTimeout(id);
+    throw error;
   }
+}
+
+export async function getJson<T>(path: string): Promise<T> {
+  return request<T>(path, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+export async function postJson<T>(path: string, body: any): Promise<T> {
+  return request<T>(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }

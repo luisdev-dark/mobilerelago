@@ -1,15 +1,6 @@
-/**
- * Configuración de la API
- * 
- * IMPORTANTE: Esta app corre en un dispositivo físico o emulador.
- * NO usar localhost - usar una URL pública accesible (ej: ngrok, tu IP local, o servidor en la nube)
- * 
- * Ejemplos:
- * - ngrok: https://abc123.ngrok.io
- * - IP local: http://192.168.1.100:8080
- * - Servidor: https://api.tudominio.com
- */
-export const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tu-ngrok-url.ngrok.io';
+// Expo Go corre en celular, por eso NO sirve localhost
+// Ejemplo: https://tu-backend.onrender.com
+export const BASE_URL = 'https://tu-backend.onrender.com';
 
 export const API_ENDPOINTS = {
   routes: '/routes',
