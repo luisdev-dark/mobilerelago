@@ -1,11 +1,12 @@
 import { getJson } from './http';
+import { API_ENDPOINTS } from '@/src/config/config';
 import type { RouteSummary, RouteDetail } from '@/src/models/route';
 
 /**
  * API de rutas
  * Endpoints:
- * - GET /routes - Lista todas las rutas
- * - GET /routes/{id} - Detalle de una ruta específica
+ * - GET /api/routes - Lista todas las rutas
+ * - GET /api/routes/{id} - Detalle de una ruta específica
  */
 
 /**
@@ -15,7 +16,7 @@ import type { RouteSummary, RouteDetail } from '@/src/models/route';
  */
 export async function fetchRoutes(): Promise<RouteSummary[]> {
   try {
-    const response = await getJson<any[]>('/routes');
+    const response = await getJson<any[]>(API_ENDPOINTS.routes);
     // Map backend snake_case to frontend camelCase
     return response.map(r => ({
       id: r.id,
@@ -48,7 +49,7 @@ export async function fetchRoutes(): Promise<RouteSummary[]> {
  */
 export async function fetchRouteDetail(id: string): Promise<RouteDetail> {
   try {
-    const r = await getJson<any>(`/routes/${id}`);
+    const r = await getJson<any>(API_ENDPOINTS.routeById(id));
 
     // Map backend snake_case to frontend camelCase
     return {

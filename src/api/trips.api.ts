@@ -1,11 +1,12 @@
 import { getJson, postJson } from './http';
+import { API_ENDPOINTS } from '@/src/config/config';
 import type { Trip, CreateTripRequest } from '@/src/models/trip';
 
 /**
  * API de viajes (trips)
  * Endpoints:
- * - POST /trips - Crear un nuevo viaje
- * - GET /trips/{id} - Obtener detalle de un viaje
+ * - POST /api/trips - Crear un nuevo viaje
+ * - GET /api/trips/{id} - Obtener detalle de un viaje
  */
 
 /**
@@ -25,7 +26,7 @@ export async function createTrip(data: CreateTripRequest): Promise<Trip> {
       scheduled_at: data.scheduledAt,
     };
 
-    const response = await postJson<any>('/trips', backendData);
+    const response = await postJson<any>(API_ENDPOINTS.trips, backendData);
     
     // Convertir snake_case a camelCase para el frontend
     return {
@@ -61,7 +62,7 @@ export async function createTrip(data: CreateTripRequest): Promise<Trip> {
  */
 export async function fetchTrip(id: string): Promise<Trip> {
   try {
-    const response = await getJson<any>(`/trips/${id}`);
+    const response = await getJson<any>(API_ENDPOINTS.tripById(id));
     
     // Convertir snake_case a camelCase para el frontend
     return {
