@@ -1,154 +1,87 @@
-import { useEffect, useState } from 'react';
-import { FlatList, StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { router } from 'expo-router';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { routesApi } from '@/src/api/routes.api';
-import type { Route } from '@/src/models/route';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { fetchRoutes } from '@/src/api/routes.api';
+import type { RouteSummary } from '@/src/models/route';
 
-export default function RoutesScreen() {
-  const [routes, setRoutes] = useState<Route[]>([]);
+export default function RoutesIndex() {
+  const router = useRouter();
+  const [routes, setRoutes] = useState<RouteSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadRoutes();
-  }, []);
 
   const loadRoutes = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await routesApi.getRoutes();
+      const data = await fetchRoutes();
       setRoutes(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading routes');
+      setError(err instanceof Error ? err.message : 'Error al cargar rutas');
     } finally {
       setLoading(false);
     }
   };
 
-  const formatPrice = (cents: number, currency: string) => {
-    return `${(cents / 100).toFixed(2)} ${currency}`;
-  };
-
-  const renderRoute = ({ item }: { item: Route }) => (
-    <TouchableOpacity
-      style={styles.routeCard}
-      onPress={() => router.push(`/routes/${item.id}`)}
-    >
-      <ThemedView style={styles.routeCardInner}>
-        <ThemedText type="defaultSemiBold" style={styles.routeName}>
-          {item.name}
-        </ThemedText>
-        <View style={styles.routeInfo}>
-          <ThemedText style={styles.routeText}>
-            {item.origin_name} → {item.destination_name}
-          </ThemedText>
-          <ThemedText style={styles.priceText}>
-            {formatPrice(item.base_price_cents, item.currency)}
-          </ThemedText>
-        </View>
-      </ThemedView>
-    </TouchableOpacity>
-  );
+  useEffect(() => {
+    loadRoutes();
+  }, []);
 
   if (loading) {
     return (
-      <ThemedView style={styles.centerContainer}>
+      <View style={styles.center}>
         <ActivityIndicator size="large" />
-        <ThemedText style={styles.loadingText}>Loading routes...</ThemedText>
-      </ThemedView>
+      </View>
     );
   }
 
   if (error) {
     return (
-      <ThemedView style={styles.centerContainer}>
-        <ThemedText style={styles.errorText}>{error}</ThemedText>
-        <TouchableOpacity style={styles.retryButton} onPress={loadRoutes}>
-          <Text style={styles.retryButtonText}>Retry</Text>
+      <View style={styles.center}>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity onPress={loadRoutes} style={styles.button}>
+          <Text style={styles.buttonText}>Reintentar</Text>
         </TouchableOpacity>
-      </ThemedView>
+      </View>
     );
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={styles.container}>
       <FlatList
         data={routes}
-        renderItem={renderRoute}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <ThemedView style={styles.centerContainer}>
-            <ThemedText>No routes available</ThemedText>
-          </ThemedView>
-        }
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push(`/routes/${item.id}`)}
+          >
+            <Text style={styles.routeTitle}>{item.name}</Text>
+            <Text>Origen: {item.originName}</Text>
+            <Text>Destino: {item.destinationName}</Text>
+            <Text style={styles.price}>
+              Precio: {item.currency} {(item.basePriceCents / 100).toFixed(2)}
+            </Text>
+          </TouchableOpacity>
+        )}
       />
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  listContent: {
+  container: { flex: 1, padding: 16, backgroundColor: '#f5f5f5' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  card: {
+    backgroundColor: 'white',
     padding: 16,
-  },
-  routeCard: {
     marginBottom: 12,
     borderRadius: 8,
-    overflow: 'hidden',
+    elevation: 2,
   },
-  routeCardInner: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  routeName: {
-    fontSize: 18,
-    marginBottom: 8,
-  },
-  routeInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  routeText: {
-    fontSize: 14,
-    flex: 1,
-  },
-  priceText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-  },
-  errorText: {
-    color: '#FF3B30',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
+  routeTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
+  price: { marginTop: 8, fontWeight: '600', color: '#007AFF' },
+  errorText: { color: 'red', marginBottom: 16 },
+  button: { backgroundColor: '#007AFF', padding: 12, borderRadius: 8 },
+  buttonText: { color: 'white', fontWeight: 'bold' },
 });
